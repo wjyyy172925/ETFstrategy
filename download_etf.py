@@ -187,7 +187,7 @@ def main():
     parser = argparse.ArgumentParser(description="A股ETF数据下载工具")
     parser.add_argument(
         "--start",
-        default=(datetime.now() - timedelta(days=365)).strftime("%Y%m%d"),
+        default=(datetime.now() - timedelta(days=3650)).strftime("%Y%m%d"),
         help="起始日期 YYYYMMDD",
     )
     parser.add_argument(
