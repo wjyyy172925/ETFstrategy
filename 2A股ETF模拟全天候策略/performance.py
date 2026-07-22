@@ -5,6 +5,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from config import RISK_FREE_RATE
 
+plt.rcParams["font.sans-serif"] = ["SimHei", "WenQuanYi Micro Hei",
+                                   "Noto Sans CJK SC", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
+
 
 def calc_metrics(equity_curve: pd.Series,
                  initial_capital: float) -> dict:
@@ -53,6 +57,8 @@ def calc_classic_all_weather(close_df: pd.DataFrame,
 
 def calc_equal_weight(close_df: pd.DataFrame,
                        initial_capital: float) -> pd.Series:
+    if close_df.empty or len(close_df.columns) == 0:
+        return pd.Series(dtype=float)
     port_returns = close_df.pct_change().dropna().mean(axis=1)
     return (1 + port_returns).cumprod() * initial_capital
 
@@ -60,8 +66,6 @@ def calc_equal_weight(close_df: pd.DataFrame,
 def plot_equity_curve(results: dict,
                       benchmark_results: dict[str, pd.Series],
                       save_path: str):
-    plt.rcParams["font.sans-serif"] = ["SimHei", "DejaVu Sans"]
-    plt.rcParams["axes.unicode_minus"] = False
     fig, axes = plt.subplots(3, 1, figsize=(14, 12))
 
     eq = results["portfolio_values"]
@@ -107,7 +111,7 @@ def print_report(strategy_metrics: dict,
         print(f"  {label}:")
         for k, v in metrics.items():
             print(f"    {k}: {v}")
-    if not trades_df.empty:
+    if not trades_df.empty and {"成本", "方向"}.issubset(trades_df.columns):
         total_cost = trades_df["成本"].sum()
         total_trades = len(trades_df)
         buy_trades = len(trades_df[trades_df["方向"] == "buy"])
