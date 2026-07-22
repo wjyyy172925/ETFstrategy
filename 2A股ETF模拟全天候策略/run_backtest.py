@@ -9,19 +9,31 @@ from data import load_multi_etf, download_all_data
 from backtest_engine import run_backtest
 from performance import calc_metrics, print_report, plot_equity_curve, calc_classic_all_weather, calc_equal_weight
 
-OUTPUT_DIR = "2A股ETF模拟全天候策略/output"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     print("Step 1: 下载/更新数据...")
-    download_all_data()
+    try:
+        download_all_data()
+    except Exception as e:
+        print(f"数据下载失败: {e}")
+        sys.exit(1)
 
     all_codes = [e["code"] for e in ETF_POOL]
 
     print("Step 2: 加载数据...")
-    close_df = load_multi_etf(all_codes)
+    try:
+        close_df = load_multi_etf(all_codes)
+    except Exception as e:
+        print(f"数据加载失败: {e}")
+        sys.exit(1)
+    if close_df.empty:
+        print("错误: 无有效数据，请检查ETF数据文件")
+        sys.exit(1)
     print(f"  数据范围: {close_df.index[0].date()} ~ {close_df.index[-1].date()}, {len(close_df)}个交易日")
 
     print("Step 3: 运行回测...")
