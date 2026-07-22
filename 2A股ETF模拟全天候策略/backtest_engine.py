@@ -148,8 +148,8 @@ def run_backtest(close_df: pd.DataFrame,
             if date in return_df.index:
                 returns_up_to = return_df.loc[:date]
                 if len(returns_up_to) >= VOL_WINDOW:
-                    current_vol = returns_up_to.tail(VOL_WINDOW).std() * np.sqrt(252)
-                    if prev_vol > 0 and abs(current_vol - prev_vol) / prev_vol > VOL_CHANGE_THRESHOLD:
+                    current_vol = returns_up_to.tail(VOL_WINDOW).std().mean() * np.sqrt(252)
+                    if prev_vol > 0 and abs(float(current_vol) - float(prev_vol)) / float(prev_vol) > VOL_CHANGE_THRESHOLD:
                         try:
                             strategy_weights = calc_etf_weights(returns_up_to, etf_pool)
                             should_rebalance = True
