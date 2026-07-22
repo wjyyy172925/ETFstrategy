@@ -7,6 +7,15 @@ from config import (
     TOTAL_COST_PER_SIDE, VOL_WINDOW, MIN_TRADE_AMOUNT,
 )
 from risk_parity import calc_etf_weights
+from logger import logger
+
+
+RISK_LABELS = {
+    "vol_scale": "波动率超标",
+    "emergency_exit": "最大回撤止损",
+    "reduce_equity": "回撤降权益",
+    "cvar_trigger": "CVaR风险预警",
+}
 
 
 def check_risk_controls(portfolio_value: float,
@@ -91,6 +100,11 @@ def run_backtest(close_df: pd.DataFrame,
         daily_returns_series = pd.Series(daily_returns_buffer).pct_change().dropna()
 
         risk_actions = check_risk_controls(portfolio_value, peak_value, daily_returns_series)
+        for key in risk_actions:
+            if key != "emergency_exit":
+                logger.warning("风控触发 | %s | 净值: %.2f | 回撤: %.2f%%",
+                               RISK_LABELS.get(key, key), portfolio_value,
+                               (peak_value - portfolio_value) / peak_value * 100)
 
         current_weights = pd.Series(0.0, index=close_df.columns)
         if portfolio_value > 0:
@@ -121,6 +135,9 @@ def run_backtest(close_df: pd.DataFrame,
             target_weights /= target_weights.sum()
 
         if risk_actions.get("emergency_exit"):
+            logger.critical("风控触发 | 紧急清仓 | 日期: %s | 净值: %.2f | 回撤: %.2f%%",
+                            date.date(), portfolio_value,
+                            (peak_value - portfolio_value) / peak_value * 100)
             for code in holdings.index:
                 if holdings[code] > 0:
                     trade_amount = holdings[code] * prices[code]
@@ -131,6 +148,7 @@ def run_backtest(close_df: pd.DataFrame,
                         "价格": round(prices[code], 4),
                         "成本": round(cost, 6),
                     })
+                    logger.info("清仓 | %s | 金额: %.2f | 价格: %.4f", code, trade_amount, prices[code])
                     cash += trade_amount - cost
                     holdings[code] = 0
             weight_history.append(current_weights.copy())
@@ -185,6 +203,9 @@ def run_backtest(close_df: pd.DataFrame,
         if should_rebalance:
             trades = execute_rebalance(current_weights, target_weights,
                                        portfolio_value, prices, date)
+            if trades:
+                logger.info("再平衡 | 日期: %s | 交易笔数: %d | 组合净值: %.2f",
+                            date.date(), len(trades), portfolio_value)
             trade_records.extend(trades)
             for t in trades:
                 index = close_df.columns.get_loc(t["代码"])
@@ -192,15 +213,24 @@ def run_backtest(close_df: pd.DataFrame,
                     share_delta = t["金额"] / t["价格"]
                     cash -= t["金额"] + t["成本"]
                     holdings.iloc[index] += share_delta
+                    logger.debug("买入 | %s | 金额: %.2f | 价格: %.4f | 股数: %.0f",
+                                 t["代码"], t["金额"], t["价格"], share_delta)
                 else:
                     share_delta = t["金额"] / t["价格"]
                     cash += t["金额"] - t["成本"]
                     holdings.iloc[index] -= share_delta
+                    logger.debug("卖出 | %s | 金额: %.2f | 价格: %.4f | 股数: %.0f",
+                                 t["代码"], t["金额"], t["价格"], share_delta)
 
         if date in return_df.index:
             returns_up_to = return_df.loc[:date]
             if len(returns_up_to) >= VOL_WINDOW:
                 prev_vol = returns_up_to.tail(VOL_WINDOW).std().mean() * np.sqrt(252)
+
+        if last_rebalance_date is not None and date.month != last_rebalance_date.month and date.day <= 5:
+            logger.info("持仓月报 | %s | 净值: %.2f | 持仓: %s",
+                        date.date(), portfolio_value,
+                        {k: f"{v:.1%}" for k, v in current_weights.items() if v > 0.01})
 
         weight_history.append(current_weights.copy())
 
