@@ -21,7 +21,9 @@ def check_risk_controls(portfolio_value: float,
     elif current_drawdown > 0.10:
         actions["reduce_equity"] = True
     if len(daily_returns) >= 252:
-        cvar = daily_returns.tail(252).quantile(0.05)
+        tail = daily_returns.tail(252)
+        var_95 = tail.quantile(0.05)
+        cvar = tail[tail <= var_95].mean() if (tail <= var_95).any() else var_95
         if abs(cvar) > 0.15:
             actions["cvar_trigger"] = True
     return actions
