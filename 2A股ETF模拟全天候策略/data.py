@@ -1,8 +1,9 @@
 import os
-import pandas as pd
 import sys
+import pandas as pd
 
-DATA_DIR = "data/etf"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_ROOT, "data", "etf")
 
 
 def get_etf_data_path(code: str) -> str:
@@ -11,6 +12,11 @@ def get_etf_data_path(code: str) -> str:
 
 def load_single_etf(code: str) -> pd.DataFrame:
     path = get_etf_data_path(code)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"ETF数据文件不存在: {path}\n"
+            f"请先运行 python download_etf.py 下载数据"
+        )
     df = pd.read_csv(path, encoding="utf-8-sig")
     df["日期"] = pd.to_datetime(df["日期"])
     df = df.sort_values("日期").set_index("日期")
@@ -27,7 +33,7 @@ def load_multi_etf(codes: list[str]) -> pd.DataFrame:
 
 
 def download_all_data():
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    sys.path.insert(0, PROJECT_ROOT)
     from download_etf import download_etf_history, ensure_dir
     from config import BACKTEST_START, BACKTEST_END, ETF_POOL, BENCHMARK_CODES
 
