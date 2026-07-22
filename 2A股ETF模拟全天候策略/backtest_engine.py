@@ -4,8 +4,9 @@ import pandas as pd
 from config import (
     INITIAL_CAPITAL, REBALANCE_FREQ, THRESHOLD_PCT,
     VOL_CHANGE_THRESHOLD, EXECUTION_RATIO, SINGLE_ETF_MAX,
-    TOTAL_COST_PER_SIDE, VOL_WINDOW,
+    TOTAL_COST_PER_SIDE, VOL_WINDOW, MIN_TRADE_AMOUNT,
 )
+from risk_parity import calc_etf_weights
 
 
 def check_risk_controls(portfolio_value: float,
@@ -40,7 +41,7 @@ def execute_rebalance(current_weights: pd.Series,
     trades = []
     for code in diff.index:
         delta = diff[code] * portfolio_value * EXECUTION_RATIO
-        if abs(delta) < 5000:
+        if abs(delta) < MIN_TRADE_AMOUNT:
             continue
         price = prices.get(code, np.nan)
         if pd.isna(price) or price <= 0:
@@ -61,8 +62,6 @@ def execute_rebalance(current_weights: pd.Series,
 
 def run_backtest(close_df: pd.DataFrame,
                  etf_pool: list[dict]) -> dict:
-    from risk_parity import calc_etf_weights
-
     return_df = close_df.pct_change().dropna()
     n_assets = len(close_df.columns)
     cash = float(INITIAL_CAPITAL)
@@ -76,6 +75,7 @@ def run_backtest(close_df: pd.DataFrame,
     last_rebalance_date = None
     prev_vol = None
     target_weights = equal_weight.copy()
+    first_date = True
 
     daily_returns_buffer = []
 
@@ -174,10 +174,10 @@ def run_backtest(close_df: pd.DataFrame,
                     cash += t["金额"] - t["成本"]
                     holdings.iloc[index] -= share_delta
 
-        if should_rebalance and date in return_df.index:
+        if date in return_df.index:
             returns_up_to = return_df.loc[:date]
             if len(returns_up_to) >= VOL_WINDOW:
-                prev_vol = returns_up_to.tail(VOL_WINDOW).std() * np.sqrt(252)
+                prev_vol = returns_up_to.tail(VOL_WINDOW).std().mean() * np.sqrt(252)
 
         weight_history.append(target_weights.copy())
 
