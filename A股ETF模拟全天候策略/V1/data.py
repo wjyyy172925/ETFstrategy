@@ -30,7 +30,7 @@ warnings.filterwarnings("ignore")
 # ============================================================================
 # 配置
 # ============================================================================
-CSV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "etf")
+CSV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "etf")
 CSV_DIR = os.path.normpath(CSV_DIR)
 
 # 中英文列名映射表（支持 data/etf/ 下的中文格式和 akshare 原始返回格式）
@@ -145,7 +145,7 @@ def load_etf_data(
         # 尝试从CSV加载
         if csv_path and not force_download:
             try:
-                df = pd.read_csv(csv_path)
+                df = pd.read_csv(csv_path, encoding="utf-8-sig")
                 df = _normalize_columns(df)
                 if _validate_df(df, code):
                     df["date"] = pd.to_datetime(df["date"], errors="coerce")
