@@ -1,0 +1,19 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# 回测输出文件
+**/output/logs/
+**/output/nav.csv
+**/output/weights.csv
+**/output/performance.png
+
+# 说明文档（单独维护）
+说明文档/
+
+# 临时/测试文件
+all_weather_ERC.py
+*.csv
+*.png
+*.md
+*.txt

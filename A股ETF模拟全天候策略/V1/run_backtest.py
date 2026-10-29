@@ -104,14 +104,23 @@ def main():
     logger.info("[Step 3/5] 计算绩效指标...")
     portfolio_metrics = compute_all_metrics(equity_curve, RISK_FREE_RATE)
 
+    # 年化换手率（双边→单边）
+    to_series = result.get("turnover_history", pd.Series(dtype=float))
+    if not to_series.empty:
+        n_years = (to_series.index[-1] - to_series.index[0]).days / 365.25
+        total_single_side = to_series.sum() / 2
+        portfolio_metrics["年化换手率"] = float(total_single_side / n_years) if n_years > 0 else 0.0
+    else:
+        portfolio_metrics["年化换手率"] = 0.0
+
     logger.info("主策略绩效:")
     for name, val in portfolio_metrics.items():
-        if isinstance(val, str):
-            logger.info(f"  {name}: {val}")
-        elif "比率" in name:
-            logger.info(f"  {name}: {val:.2f}")
-        else:
-            logger.info(f"  {name}: {val:.2%}")
+            if isinstance(val, str):
+                logger.info(f"  {name}: {val}")
+            elif "比率" in name or "换手" in name:
+                logger.info(f"  {name}: {val:.2f}")
+            else:
+                logger.info(f"  {name}: {val:.2%}")
 
     # ================================================================
     # 步骤4：构建对比基准
@@ -139,7 +148,7 @@ def main():
     print("=" * 65 + "\n")
 
     # 生成图表
-    plot_results(equity_curve, weights_df, benchmarks, portfolio_metrics, OUTPUT_DIR)
+    plot_results(equity_curve, weights_df, benchmarks, portfolio_metrics, output_dir=OUTPUT_DIR)
 
     # 保存权重变化到CSV（可选）
     weights_path = os.path.join(OUTPUT_DIR, "weights.csv")

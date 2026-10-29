@@ -189,9 +189,11 @@ def build_benchmark_portfolios(
     else:
         hs300_eq = pd.Series(index=price_df.index, data=initial_capital)
 
+    hs300_metrics = compute_all_metrics(hs300_eq, rf)
+    hs300_metrics["年化换手率"] = 0.0  # 买入持有不再交易
     benchmarks["沪深300"] = {
         "equity": hs300_eq,
-        "metrics": compute_all_metrics(hs300_eq, rf),
+        "metrics": hs300_metrics,
     }
 
     # ----- 2. 经典全天候：30%权益/55%债券/7.5%黄金/7.5%商品 -----
@@ -199,21 +201,33 @@ def build_benchmark_portfolios(
     active_etfs = [code_to_etf[c] for c in codes if c in code_to_etf]
 
     classic_w = _aa_weights_to_etf_weights(CLASSIC_AA_WEIGHTS, active_etfs, n)
-    classic_eq = _build_rebalanced_portfolio(price_df, classic_w, initial_capital)
+    classic_eq, classic_to = _build_rebalanced_portfolio(price_df, classic_w, initial_capital)
+    classic_metrics = compute_all_metrics(classic_eq, rf)
+    classic_metrics["年化换手率"] = _compute_annual_turnover(classic_to)
     benchmarks["经典全天候"] = {
         "equity": classic_eq,
-        "metrics": compute_all_metrics(classic_eq, rf),
+        "metrics": classic_metrics,
     }
 
     # ----- 3. 等权重：四大类各25% -----
     equal_w = _aa_weights_to_etf_weights(EQUAL_WEIGHT, active_etfs, n)
-    equal_eq = _build_rebalanced_portfolio(price_df, equal_w, initial_capital)
+    equal_eq, equal_to = _build_rebalanced_portfolio(price_df, equal_w, initial_capital)
+    equal_metrics = compute_all_metrics(equal_eq, rf)
+    equal_metrics["年化换手率"] = _compute_annual_turnover(equal_to)
     benchmarks["等权重"] = {
         "equity": equal_eq,
-        "metrics": compute_all_metrics(equal_eq, rf),
+        "metrics": equal_metrics,
     }
 
     return benchmarks
+
+
+def _compute_annual_turnover(turnover_series: pd.Series) -> float:
+    """从日频换手率序列计算年化换手率（单边）。"""
+    if turnover_series.empty:
+        return 0.0
+    n_years = (turnover_series.index[-1] - turnover_series.index[0]).days / 365.25
+    return float(turnover_series.sum() / n_years) if n_years > 0 else 0.0
 
 
 def _aa_weights_to_etf_weights(
@@ -242,21 +256,25 @@ def _build_rebalanced_portfolio(
     price_df: pd.DataFrame,
     target_weights: np.ndarray,
     initial_capital: float,
-) -> pd.Series:
+) -> Tuple[pd.Series, pd.Series]:
     """
     构建月度再平衡的组合净值序列（含交易成本、整手100股取整）。
 
     每月第一个交易日按 target_weights 调仓。
+
+    Returns:
+        (equity, turnover): 净值序列和单边换手率序列
     """
     n_assets = len(target_weights)
     n_dates = len(price_df)
     prices = price_df.values
 
     equity = np.full(n_dates, np.nan)
+    turnover_series = np.zeros(n_dates)
     cash = initial_capital
     shares = np.zeros(n_assets)
 
-    # 首日建仓（全量买入）
+    # 首日建仓（全量买入），换手率 = 100%（单边）
     first_price = prices[0, :]
     for i in range(n_assets):
         target_value = initial_capital * target_weights[i]
@@ -265,6 +283,7 @@ def _build_rebalanced_portfolio(
         cash -= shares[i] * first_price[i]
     cash -= initial_capital * TOTAL_COST_PER_SIDE
     equity[0] = np.sum(shares * first_price) + cash
+    turnover_series[0] = 1.0  # 首日建仓换手 100%
 
     prev_month = price_df.index[0].month
 
@@ -281,6 +300,8 @@ def _build_rebalanced_portfolio(
             old_values = shares * prices_today
             new_target_values = portfolio_value * target_weights
             turnover = np.sum(np.abs(new_target_values - old_values))
+            # 单边换手率
+            turnover_series[t] = turnover / (2 * portfolio_value) if portfolio_value > 0 else 0
             trade_cost = turnover * TOTAL_COST_PER_SIDE
             available_capital = portfolio_value - trade_cost
 
@@ -297,7 +318,10 @@ def _build_rebalanced_portfolio(
 
         prev_month = current_month
 
-    return pd.Series(equity, index=price_df.index, name="benchmark")
+    return (
+        pd.Series(equity, index=price_df.index, name="benchmark"),
+        pd.Series(turnover_series, index=price_df.index, name="turnover"),
+    )
 
 
 # ============================================================================
@@ -318,7 +342,7 @@ def build_performance_summary(
         DataFrame: 行=指标，列=策略，格式化为百分比
     """
     # 基础指标列表
-    metric_names = ["年化收益率", "年化波动率", "夏普比率", "最大回撤", "卡玛比率", "胜率", "最大回撤区间"]
+    metric_names = ["年化收益率", "年化波动率", "夏普比率", "最大回撤", "卡玛比率", "胜率", "最大回撤区间", "年化换手率"]
     # 格式函数：比率转百分比，夏普保留两位小数，区间直接透传
     fmt_funcs = {
         metric_names[0]: lambda x: f"{x:.2%}",
@@ -328,6 +352,7 @@ def build_performance_summary(
         metric_names[4]: lambda x: f"{x:.2f}",
         metric_names[5]: lambda x: f"{x:.2%}",
         metric_names[6]: lambda x: str(x),
+        metric_names[7]: lambda x: f"{x:.2f}",
     }
 
     summary = {}

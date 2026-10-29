@@ -108,6 +108,12 @@ class BacktestEngine:
         self.n_trades = 0            # 总交易次数
         self.last_rebalance_date = None  # 上次再平衡日期
 
+        # 优化器降级统计
+        self.optimizer_stats = {"tight": 0, "loose": 0, "free": 0, "fallback": 0}
+
+        # 换手率追踪
+        self.turnover_history = np.zeros(self.n_dates)
+
     # ========================================================================
     # 主回测循环
     # ========================================================================
@@ -240,11 +246,19 @@ class BacktestEngine:
                     f"{'成功' if info['success'] else '回退'}"
                 )
 
-                # 3b. 执行风控检查（三层）
+                # 统计优化器降级情况
+                level = info.get("bounds_level", "tight")
+                if info.get("fallback"):
+                    self.optimizer_stats["fallback"] += 1
+                else:
+                    self.optimizer_stats[level] = self.optimizer_stats.get(level, 0) + 1
+
+                # 3b. 执行风控检查（三层）——已关闭
                 self.target_history[t, :] = target_weights.copy()
-                adjusted_weights = self._apply_risk_controls(
-                    target_weights, t, current_drawdown
-                )
+                adjusted_weights = target_weights.copy()
+                # adjusted_weights = self._apply_risk_controls(
+                #     target_weights, t, current_drawdown
+                # )
 
                 # 3c. 执行交易（从当前权重调整到目标权重）
                 if not np.allclose(self.current_weights, adjusted_weights, atol=1e-4):
@@ -260,6 +274,9 @@ class BacktestEngine:
                     turnover = np.sum(np.abs(new_target_values - old_values))
                     trade_cost = turnover * TOTAL_COST_PER_SIDE
                     available_capital = portfolio_value - trade_cost
+
+                    # 记录换手率（相对组合价值）
+                    self.turnover_history[t] = turnover / portfolio_value
 
                     new_shares = np.zeros(self.n_assets)
                     remaining_cash = available_capital
@@ -304,6 +321,10 @@ class BacktestEngine:
         self.logger.info("=" * 60)
         self.logger.info(f"回测结束 | 最终净值: {self.equity_curve[-1]:,.0f} | 累计倍数: {final_nav:.4f}")
         self.logger.info(f"总交易次数: {self.n_trades}")
+        self.logger.info(f"优化器统计: 一次求解={self.optimizer_stats['tight']}, "
+                         f"一级降级={self.optimizer_stats['loose']}, "
+                         f"二级降级={self.optimizer_stats['free']}, "
+                         f"等权重回退={self.optimizer_stats['fallback']}")
         self.logger.info("=" * 60)
 
         # 整理返回结果
@@ -314,6 +335,7 @@ class BacktestEngine:
             "n_trades": self.n_trades,
             "trade_log": self.trade_log,
             "nav": final_nav,
+            "turnover_history": pd.Series(self.turnover_history, index=self.dates, name="turnover"),
         }
         return result
 

@@ -213,7 +213,9 @@ def solve_erc_weights(
     result = None
     used_bounds = "tight"
 
+    attempts_tried = 0
     for attempt in range(3):
+        attempts_tried = attempt + 1
         result = minimize(
             _erc_objective,
             w0,
@@ -241,10 +243,12 @@ def solve_erc_weights(
     # ================================================================
     # 4. 最终回退
     # ================================================================
+    fallback = False
     if result is None or not result.success:
         print(f"[risk_parity] 优化未收敛, 使用等权重回退")
         final_weights = np.ones(n) / n
         solved = False
+        fallback = True
     else:
         final_weights = result.x
         solved = True
@@ -258,6 +262,8 @@ def solve_erc_weights(
     info = {
         "success": solved,
         "bounds_level": used_bounds,
+        "attempts_tried": attempts_tried,
+        "fallback": fallback,
         "portfolio_volatility": port_vol,
         "risk_contributions": rc,
         "risk_contribution_pct": rc / (rc.sum() + 1e-10),
