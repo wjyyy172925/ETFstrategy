@@ -103,7 +103,7 @@ def _erc_objective(
     ERC优化目标函数——最小化各资产风险贡献与目标预算的偏离。
 
     损失函数：Σ (RC_i - budget_i * σ_total)²
-    即让每个资产的风险贡献尽可能接近其预算比例乘以总风险。
+    即让每个资产的风险贡献尽可能接近其 预算比例乘以总风险（每个资产的风险预算）。
 
     当所有资产使用等风险预算时，就是标准ERC。
 
@@ -119,7 +119,7 @@ def _erc_objective(
     total_risk = rc.sum()
     if total_risk < 1e-10:
         return 0.0
-    # 目标：各RC占总风险的比例 = 目标预算比例
+    # 目标：各RC = 风险预算
     target = risk_budgets * total_risk
     return np.sum((rc - target) ** 2)
 

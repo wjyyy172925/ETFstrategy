@@ -35,7 +35,17 @@ from config import (
     INITIAL_CAPITAL,
     OUTPUT_DIR,
     RISK_FREE_RATE,
+    TOTAL_COST_PER_SIDE,
 )
+
+# CLASSIC_AA_WEIGHTS 和 EQUAL_WEIGHT 按四大类定义：[权益, 债券, 黄金, 商品]
+# 需映射到 ETF_POOL 中实际的 5 个 asset_class
+_AA_GROUP_MAP = {
+    0: ["equity"],               # 权益
+    1: ["long_bond", "mid_bond"], # 债券（长久期+中短债）
+    2: ["gold"],                  # 黄金
+    3: ["commodity"],            # 商品
+}
 
 # ============================================================================
 # 中文显示设置
@@ -96,7 +106,11 @@ def compute_all_metrics(
     total_days = len(returns)
 
     if total_days < 2:
-        return {"年化收益率": 0, "年化波动率": 0, "夏普比率": 0, "最大回撤": 0, "卡玛比率": 0, "胜率": 0}
+        return {
+            "年化收益率": 0, "年化波动率": 0, "夏普比率": 0, "最大回撤": 0,
+            "卡玛比率": 0, "胜率": 0,
+            "最大回撤区间": "N/A",
+        }
 
     # 1. 年化收益率
     total_return = equity_series.iloc[-1] / equity_series.iloc[0]
@@ -116,6 +130,11 @@ def compute_all_metrics(
     drawdown = (equity_series - peak) / peak
     max_dd = drawdown.min()
 
+    # 最大回撤区间：峰值日期 → 谷底日期
+    max_dd_end_date = drawdown.idxmin()
+    max_dd_start_date = equity_series[:max_dd_end_date].idxmax()
+    max_dd_range = f"{max_dd_start_date.strftime('%Y-%m-%d')} ~ {max_dd_end_date.strftime('%Y-%m-%d')}"
+
     # 5. 卡玛比率
     calmar = cagr / abs(max_dd) if abs(max_dd) > 1e-10 else 0
 
@@ -129,6 +148,7 @@ def compute_all_metrics(
         "最大回撤": round(float(max_dd), 4),
         "卡玛比率": round(calmar, 4),
         "胜率": round(win_rate, 4),
+        "最大回撤区间": max_dd_range,
     }
 
 
@@ -174,34 +194,20 @@ def build_benchmark_portfolios(
         "metrics": compute_all_metrics(hs300_eq, rf),
     }
 
-    # ----- 2. 经典全天候 -----
-    # 按资产大类分配权重，仅使用实际可用的ETF
+    # ----- 2. 经典全天候：30%权益/55%债券/7.5%黄金/7.5%商品 -----
     code_to_etf = {e["code"]: e for e in ETF_POOL}
     active_etfs = [code_to_etf[c] for c in codes if c in code_to_etf]
 
-    class_weights = {}
-    for ct, cfg in ASSET_CLASS_MAP.items():
-        class_weights[ct] = cfg["risk_budget"]
-
-    # 统计每个大类在活跃ETF中的数量
-    active_class_count = {}
-    for etf in active_etfs:
-        ac = etf["asset_class"]
-        active_class_count[ac] = active_class_count.get(ac, 0) + 1
-
-    classic_w = np.zeros(n)
-    for i, etf in enumerate(active_etfs):
-        classic_w[i] = class_weights.get(etf["asset_class"], 0) / active_class_count.get(etf["asset_class"], 1)
-
-    classic_eq = _build_weighted_portfolio(price_df, classic_w, initial_capital)
+    classic_w = _aa_weights_to_etf_weights(CLASSIC_AA_WEIGHTS, active_etfs, n)
+    classic_eq = _build_rebalanced_portfolio(price_df, classic_w, initial_capital)
     benchmarks["经典全天候"] = {
         "equity": classic_eq,
         "metrics": compute_all_metrics(classic_eq, rf),
     }
 
-    # ----- 3. 等权重 -----
-    equal_w = np.ones(n) / n
-    equal_eq = _build_weighted_portfolio(price_df, equal_w, initial_capital)
+    # ----- 3. 等权重：四大类各25% -----
+    equal_w = _aa_weights_to_etf_weights(EQUAL_WEIGHT, active_etfs, n)
+    equal_eq = _build_rebalanced_portfolio(price_df, equal_w, initial_capital)
     benchmarks["等权重"] = {
         "equity": equal_eq,
         "metrics": compute_all_metrics(equal_eq, rf),
@@ -210,27 +216,88 @@ def build_benchmark_portfolios(
     return benchmarks
 
 
-def _build_weighted_portfolio(
+def _aa_weights_to_etf_weights(
+    aa_weights: list,
+    active_etfs: list,
+    n_codes: int,
+) -> np.ndarray:
+    """
+    将四大类权重转换为每只 ETF 的权重。
+
+    CLASSIC_AA_WEIGHTS / EQUAL_WEIGHT 格式：[权益, 债券, 黄金, 商品]
+    债券大类下包含 long_bond + mid_bond，内部等分。
+    """
+    w = np.zeros(n_codes)
+    for group_idx, asset_classes in _AA_GROUP_MAP.items():
+        group_weight = aa_weights[group_idx]
+        members = [i for i, etf in enumerate(active_etfs) if etf["asset_class"] in asset_classes]
+        if members:
+            per_member = group_weight / len(members)
+            for i in members:
+                w[i] = per_member
+    return w
+
+
+def _build_rebalanced_portfolio(
     price_df: pd.DataFrame,
-    weights: np.ndarray,
+    target_weights: np.ndarray,
     initial_capital: float,
 ) -> pd.Series:
     """
-    根据固定权重和初始资金构建组合净值序列。
+    构建月度再平衡的组合净值序列（含交易成本、整手100股取整）。
 
-    假设：初始按权重满仓，后续不再再平衡（权重会随价格漂移）。
-
-    Args:
-        price_df: ETF价格矩阵
-        weights: 初始权重向量
-        initial_capital: 初始资金
-
-    Returns:
-        组合净值Series
+    每月第一个交易日按 target_weights 调仓。
     """
-    n_shares = initial_capital * weights / price_df.iloc[0, :]
-    port_value = price_df.values @ n_shares
-    return pd.Series(port_value, index=price_df.index, name="benchmark")
+    n_assets = len(target_weights)
+    n_dates = len(price_df)
+    prices = price_df.values
+
+    equity = np.full(n_dates, np.nan)
+    cash = initial_capital
+    shares = np.zeros(n_assets)
+
+    # 首日建仓（全量买入）
+    first_price = prices[0, :]
+    for i in range(n_assets):
+        target_value = initial_capital * target_weights[i]
+        raw_shares = target_value / first_price[i]
+        shares[i] = int(raw_shares / 100) * 100
+        cash -= shares[i] * first_price[i]
+    cash -= initial_capital * TOTAL_COST_PER_SIDE
+    equity[0] = np.sum(shares * first_price) + cash
+
+    prev_month = price_df.index[0].month
+
+    for t in range(1, n_dates):
+        prices_today = prices[t, :]
+        current_month = price_df.index[t].month
+
+        # 每日更新净值
+        portfolio_value = np.sum(shares * prices_today) + cash
+        equity[t] = portfolio_value
+
+        # 月初再平衡
+        if current_month != prev_month:
+            old_values = shares * prices_today
+            new_target_values = portfolio_value * target_weights
+            turnover = np.sum(np.abs(new_target_values - old_values))
+            trade_cost = turnover * TOTAL_COST_PER_SIDE
+            available_capital = portfolio_value - trade_cost
+
+            new_shares = np.zeros(n_assets)
+            remaining_cash = available_capital
+            for i in range(n_assets):
+                target_value = available_capital * target_weights[i]
+                raw_shares = target_value / prices_today[i]
+                new_shares[i] = int(raw_shares / 100) * 100
+                remaining_cash -= new_shares[i] * prices_today[i]
+
+            shares = new_shares
+            cash = remaining_cash
+
+        prev_month = current_month
+
+    return pd.Series(equity, index=price_df.index, name="benchmark")
 
 
 # ============================================================================
@@ -251,8 +318,8 @@ def build_performance_summary(
         DataFrame: 行=指标，列=策略，格式化为百分比
     """
     # 基础指标列表
-    metric_names = ["年化收益率", "年化波动率", "夏普比率", "最大回撤", "卡玛比率", "胜率"]
-    # 格式函数：比率转百分比，夏普保留两位小数
+    metric_names = ["年化收益率", "年化波动率", "夏普比率", "最大回撤", "卡玛比率", "胜率", "最大回撤区间"]
+    # 格式函数：比率转百分比，夏普保留两位小数，区间直接透传
     fmt_funcs = {
         metric_names[0]: lambda x: f"{x:.2%}",
         metric_names[1]: lambda x: f"{x:.2%}",
@@ -260,6 +327,7 @@ def build_performance_summary(
         metric_names[3]: lambda x: f"{x:.2%}",
         metric_names[4]: lambda x: f"{x:.2f}",
         metric_names[5]: lambda x: f"{x:.2%}",
+        metric_names[6]: lambda x: str(x),
     }
 
     summary = {}
@@ -353,6 +421,7 @@ def plot_results(
         f"年化波动: {portfolio_metrics.get('年化波动率', 0):.2%} | "
         f"夏普: {portfolio_metrics.get('夏普比率', 0):.2f}\n"
         f"最大回撤: {portfolio_metrics.get('最大回撤', 0):.2%} | "
+        f"最大回撤区间: {portfolio_metrics.get('最大回撤区间', 'N/A')}\n"
         f"卡玛: {portfolio_metrics.get('卡玛比率', 0):.2f} | "
         f"胜率: {portfolio_metrics.get('胜率', 0):.2%}"
     )

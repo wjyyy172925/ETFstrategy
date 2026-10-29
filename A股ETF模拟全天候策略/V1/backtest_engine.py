@@ -138,19 +138,22 @@ class BacktestEngine:
         self.logger.info("=" * 60)
 
         # ----- 初始化首日 -----
-        first_price = self.prices[0, :]
+        first_price = self.prices[0, :]  # 第一个交易日所有ETF收盘价
         # 初始等权重建仓
-        self.equity_curve[0] = self.initial_capital
-        self.weight_history[0, :] = self.current_weights
-        self.target_history[0, :] = self.current_weights
+        self.equity_curve[0] = self.initial_capital # 1亿
+        self.weight_history[0, :] = self.current_weights    # 实际权重
+        self.target_history[0, :] = self.current_weights    # 目标权重
 
-        # 买入初始持仓
+        # 买入初始持仓（整手100股取整）
         cash = self.initial_capital
         shares = np.zeros(self.n_assets)
         for i in range(self.n_assets):
-            cost = cash * self.current_weights[i] * (1 + TOTAL_COST_PER_SIDE)
-            shares[i] = cost / first_price[i]
-            cash -= cost
+            target_value = self.initial_capital * self.current_weights[i]
+            raw_shares = target_value / first_price[i]
+            shares[i] = int(raw_shares / 100) * 100  # 整手取整
+            cash -= shares[i] * first_price[i]        # 按整手后的实际金额扣除
+        # 建仓交易成本（全量买入，单边万8）
+        cash -= self.initial_capital * TOTAL_COST_PER_SIDE
 
         # 更新建仓后净值（扣除交易成本后的实际市值）
         self.equity_curve[0] = np.sum(shares * first_price) + cash
@@ -251,14 +254,21 @@ class BacktestEngine:
                     execution_weights = np.clip(execution_weights, WEIGHT_MIN, WEIGHT_MAX)
                     execution_weights = execution_weights / execution_weights.sum()
 
-                    # 执行换仓
+                    # 执行换仓：按实际换手率收交易成本，整手100股取整
+                    old_values = shares * prices_today
+                    new_target_values = portfolio_value * execution_weights
+                    turnover = np.sum(np.abs(new_target_values - old_values))
+                    trade_cost = turnover * TOTAL_COST_PER_SIDE
+                    available_capital = portfolio_value - trade_cost
+
                     new_shares = np.zeros(self.n_assets)
-                    remaining_cash = portfolio_value
+                    remaining_cash = available_capital
                     for i in range(self.n_assets):
-                        target_amount = portfolio_value * execution_weights[i] * (1 + TOTAL_COST_PER_SIDE)
-                        if target_amount >= MIN_TRADE_AMOUNT:
-                            new_shares[i] = target_amount / prices_today[i]
-                            remaining_cash -= target_amount
+                        target_value = available_capital * execution_weights[i]
+                        if target_value >= MIN_TRADE_AMOUNT:
+                            raw_shares = target_value / prices_today[i]
+                            new_shares[i] = int(raw_shares / 100) * 100      # 整手取整
+                            remaining_cash -= new_shares[i] * prices_today[i]  # 按整手后的实际金额扣除
                         else:
                             # 金额太小，保持现金
                             pass

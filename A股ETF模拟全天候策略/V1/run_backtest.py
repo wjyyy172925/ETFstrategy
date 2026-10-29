@@ -106,7 +106,9 @@ def main():
 
     logger.info("主策略绩效:")
     for name, val in portfolio_metrics.items():
-        if "比率" in name:
+        if isinstance(val, str):
+            logger.info(f"  {name}: {val}")
+        elif "比率" in name:
             logger.info(f"  {name}: {val:.2f}")
         else:
             logger.info(f"  {name}: {val:.2%}")
