@@ -24,12 +24,13 @@ ETF标的池说明：
 ETF_POOL = [
     {"code": "510300", "name": "沪深300ETF",  "asset_class": "equity"},      # A股大盘蓝筹
     {"code": "510500", "name": "中证500ETF",  "asset_class": "equity"},      # A股中盘成长
+    # {"code": "159915", "name": "创业板ETF",  "asset_class": "equity"},      # 不如中证500（夏普更低、与纳指风格撞车）
+    {"code": "513100", "name": "纳指ETF",     "asset_class": "equity"},      # 美股科技成长
     {"code": "511260", "name": "十年国债ETF", "asset_class": "long_bond"},   # 长久期利率债
     {"code": "511010", "name": "国债ETF",     "asset_class": "mid_bond"},    # 中期国债
-# 159649国开债是2022年上市的,比其他资产上市时间晚了5年左右,对齐后数据量减少很多,故去掉
-#   {"code": "159649", "name": "国开债ETF",   "asset_class": "mid_bond"},    # 政策性金融债
     {"code": "518880", "name": "黄金ETF",     "asset_class": "gold"},        # 黄金
     {"code": "159985", "name": "豆粕ETF",     "asset_class": "commodity"},   # 商品期货
+    # {"code": "512400", "name": "有色金属ETF",  "asset_class": "commodity"},   # 与权益强相关，不加
 ]
 
 # 对比基准代码（沪深300作为A股市场基准）

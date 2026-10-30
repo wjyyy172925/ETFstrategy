@@ -126,7 +126,10 @@ def main():
     # 步骤4：构建对比基准
     # ================================================================
     logger.info("[Step 4/5] 构建对比基准组合...")
-    benchmarks = build_benchmark_portfolios(price_df, codes, INITIAL_CAPITAL, RISK_FREE_RATE)
+    # 基准的回测区间与主策略对齐，确保同口径比较
+    backtest_start = equity_curve.index[0]
+    bm_price_df = price_df.loc[backtest_start:]
+    benchmarks = build_benchmark_portfolios(bm_price_df, codes, INITIAL_CAPITAL, RISK_FREE_RATE)
 
     for bm_name, bm_data in benchmarks.items():
         bm_metrics = bm_data["metrics"]

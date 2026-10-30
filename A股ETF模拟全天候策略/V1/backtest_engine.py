@@ -262,11 +262,11 @@ class BacktestEngine:
 
                 # 3c. 执行交易（从当前权重调整到目标权重）
                 if not np.allclose(self.current_weights, adjusted_weights, atol=1e-4):
-                    # 使用EXECUTION_RATIO逐步调整，减少冲击成本
+                    # EXECUTION_RATIO & WEIGHT_CLIP —— 已关闭，暴露真实换手
                     delta = adjusted_weights - self.current_weights
-                    execution_weights = self.current_weights + delta * EXECUTION_RATIO
-                    execution_weights = np.clip(execution_weights, WEIGHT_MIN, WEIGHT_MAX)
-                    execution_weights = execution_weights / execution_weights.sum()
+                    execution_weights = self.current_weights + delta * 1.0
+                    # execution_weights = np.clip(execution_weights, WEIGHT_MIN, WEIGHT_MAX)
+                    # execution_weights = execution_weights / execution_weights.sum()
 
                     # 执行换仓：按实际换手率收交易成本，整手100股取整
                     old_values = shares * prices_today
