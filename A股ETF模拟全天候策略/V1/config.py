@@ -10,10 +10,10 @@
   使任一宏观环境下都有资产贡献收益。
 
 ETF标的池说明：
-  - 权益（25%风险预算）：沪深300(大盘) + 中证500(中盘)，覆盖A股核心宽基
-  - 长久期利率债（25%风险预算）：十年国债ETF，久期≈8年，抗通缩核心资产
-  - 中短债+信用债（25%风险预算）：国债ETF + 国开债ETF，久期≈4年，提供稳定现金流
-  - 黄金+商品（25%风险预算）：黄金ETF(抗通胀+避险) + 豆粕ETF(商品期货)
+  - 权益：沪深300(大盘) + 中证1000(小盘) + 红利低波(高股息价值)
+  - 债券：十年国债ETF(久期≈8年) + 国债ETF(久期≈4年)
+  - 商品：有色ETF + 能化ETF + 豆粕ETF(商品期货)
+  - 黄金：黄金ETF(抗通胀+避险)
 """
 
 # ============================================================================
@@ -23,14 +23,14 @@ ETF标的池说明：
 # asset_class用于风险平价计算时将同类ETF合并为资产大类
 ETF_POOL = [
     {"code": "510300", "name": "沪深300ETF",  "asset_class": "equity"},      # A股大盘蓝筹
-    {"code": "510500", "name": "中证500ETF",  "asset_class": "equity"},      # A股中盘成长
-    # {"code": "159915", "name": "创业板ETF",  "asset_class": "equity"},      # 不如中证500（夏普更低、与纳指风格撞车）
-    {"code": "513100", "name": "纳指ETF",     "asset_class": "equity"},      # 美股科技成长
+    {"code": "512100", "name": "中证1000ETF", "asset_class": "equity"},      # A股小盘成长
+    {"code": "512890", "name": "红利低波ETF", "asset_class": "equity"},      # 高股息价值
     {"code": "511260", "name": "十年国债ETF", "asset_class": "long_bond"},   # 长久期利率债
     {"code": "511010", "name": "国债ETF",     "asset_class": "mid_bond"},    # 中期国债
+    {"code": "159980", "name": "有色ETF",     "asset_class": "commodity"},   # 有色金属期货
+    {"code": "159981", "name": "能化ETF",     "asset_class": "commodity"},   # 能源化工期货
+    {"code": "159985", "name": "豆粕ETF",     "asset_class": "commodity"},   # 豆粕期货
     {"code": "518880", "name": "黄金ETF",     "asset_class": "gold"},        # 黄金
-    {"code": "159985", "name": "豆粕ETF",     "asset_class": "commodity"},   # 商品期货
-    # {"code": "512400", "name": "有色金属ETF",  "asset_class": "commodity"},   # 与权益强相关，不加
 ]
 
 # 对比基准代码（沪深300作为A股市场基准）
